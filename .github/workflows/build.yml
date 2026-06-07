@@ -1,22 +1,158 @@
 name: Build APK
+
 on: [push]
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+    
+    - name: Create Android project
+      run: |
+        mkdir -p app/src/main/java/com/dpichanger
+        mkdir -p app/src/main/res/layout
+        mkdir -p app/src/main/res/mipmap-hdpi
+        mkdir -p app/src/main/res/values
+        
+        echo 'package com.dpichanger;
+import android.app.Activity;
+import android.os.Bundle;
+import android.widget.*;
+import java.io.*;
+public class MainActivity extends Activity {
+    EditText dpiInput;
+    TextView statusText;
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        dpiInput = findViewById(R.id.dpiInput);
+        statusText = findViewById(R.id.statusText);
+        findViewById(R.id.applyBtn).setOnClickListener(v -> {
+            String dpi = dpiInput.getText().toString();
+            if(!dpi.isEmpty()) runCommand("wm density " + dpi);
+        });
+        findViewById(R.id.resetBtn).setOnClickListener(v -> {
+            runCommand("wm density reset");
+        });
+    }
+    private void runCommand(String cmd) {
+        try {
+            Process p = Runtime.getRuntime().exec("su");
+            DataOutputStream os = new DataOutputStream(p.getOutputStream());
+            os.writeBytes(cmd + "\n exit\n");
+            os.flush();
+            p.waitFor();
+            statusText.setText("Done: " + cmd);
+        } catch(Exception e) {
+            statusText.setText("Error: " + e.getMessage());
+        }
+    }
+}' > app/src/main/java/com/dpichanger/MainActivity.java
+        
+        echo '<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="20dp">
+    <EditText android:id="@+id/dpiInput"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:hint="Enter DPI (e.g., 480)"
+        android:inputType="number"/>
+    <Button android:id="@+id/applyBtn"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:text="APPLY DPI"
+        android:layout_marginTop="10dp"/>
+    <Button android:id="@+id/resetBtn"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:text="RESET DPI"
+        android:layout_marginTop="10dp"/>
+    <TextView android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Ready"
+        android:layout_marginTop="20dp"
+        android:padding="10dp"
+        android:background="#ddd"/>
+</LinearLayout>' > app/src/main/res/layout/activity_main.xml
+        
+        echo 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' | base64 -d > app/src/main/res/mipmap-hdpi/ic_launcher.png
+        
+        echo '<resources><string name="app_name">DPI Changer</string></resources>' > app/src/main/res/values/strings.xml
+        
+        echo '<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:icon="@mipmap/ic_launcher" android:label="DPI Changer">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>' > app/src/main/AndroidManifest.xml
+    
+    - name: Create build.gradle files
+      run: |
+        echo 'plugins { id("com.android.application") }
+android {
+    namespace "com.dpichanger"
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.dpichanger"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+}
+dependencies {
+    implementation "androidx.appcompat:appcompat:1.6.1"
+}' > app/build.gradle
+        
+        echo 'buildscript {
+    repositories { google(); mavenCentral() }
+    dependencies { classpath "com.android.tools.build:gradle:8.1.0" }
+}
+allprojects {
+    repositories { google(); mavenCentral() }
+}' > build.gradle
+        
+        echo 'include ":app"' > settings.gradle
+        echo 'android.useAndroidX=true' > gradle.properties
+    
+    - name: Setup Gradle wrapper
+      run: |
+        mkdir -p gradle/wrapper
+        echo 'distributionBase=GRADLE_USER_HOME
+distributionPath=wrapper/dists
+distributionUrl=https\://services.gradle.org/distributions/gradle-8.0-bin.zip
+zipStoreBase=GRADLE_USER_HOME
+zipStorePath=wrapper/dists' > gradle/wrapper/gradle-wrapper.properties
+    
     - name: Build APK
       run: |
-        mkdir -p app/src/main/java/com/dpichanger app/src/main/res/layout app/src/main/res/mipmap-hdpi
-        echo 'package com.dpichanger; import android.app.Activity; import android.os.Bundle; import android.widget.*; public class MainActivity extends Activity { private EditText dpiInput; private TextView statusText; @Override protected void onCreate(Bundle savedInstanceState) { super.onCreate(savedInstanceState); setContentView(R.layout.activity_main); dpiInput = findViewById(R.id.dpiInput); statusText = findViewById(R.id.statusText); findViewById(R.id.applyBtn).setOnClickListener(v -> { try { Runtime.getRuntime().exec("su -c wm density "+dpiInput.getText()); statusText.setText("Applied"); } catch(Exception e) { statusText.setText("Error"); } }); } }' > app/src/main/java/com/dpichanger/MainActivity.java
-        echo '<?xml version="1.0" encoding="utf-8"?><LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="20dp"><EditText android:id="@+id/dpiInput" android:layout_width="match_parent" android:layout_height="50dp" android:hint="Enter DPI"/><Button android:id="@+id/applyBtn" android:layout_width="match_parent" android:layout_height="50dp" android:text="APPLY DPI"/><TextView android:id="@+id/statusText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Ready"/></LinearLayout>' > app/src/main/res/layout/activity_main.xml
-        echo 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' | base64 -d > app/src/main/res/mipmap-hdpi/ic_launcher.png
-        echo '<?xml version="1.0" encoding="utf-8"?><manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:icon="@mipmap/ic_launcher" android:label="DPI Changer"><activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity></application></manifest>' > app/src/main/AndroidManifest.xml
-        echo 'plugins { id("com.android.application") } android { namespace "com.dpichanger"; compileSdk 34; defaultConfig { applicationId "com.dpichanger"; minSdk 21; targetSdk 34; versionCode 1; versionName "1.0" } } dependencies { implementation "androidx.appcompat:appcompat:1.6.1" }' > app/build.gradle
-        echo 'buildscript { repositories { google(); mavenCentral() } dependencies { classpath "com.android.tools.build:gradle:8.1.0" } }' > build.gradle
-        echo 'include ":app"' > settings.gradle
+        curl -L -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.0.0/gradle/wrapper/gradle-wrapper.jar
+        echo '#!/bin/sh
+exec java -classpath "gradle/wrapper/gradle-wrapper.jar" org.gradle.wrapper.GradleWrapperMain "$@"' > gradlew
+        chmod +x gradlew
+        ./gradlew assembleDebug --no-daemon
+    
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: DPI-Changer
+        name: DPI-Changer-App
         path: app/build/outputs/apk/debug/*.apk
